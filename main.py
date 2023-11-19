@@ -11,17 +11,32 @@ from pymelsec.constants import DT
 from pymelsec.tag import Tag
 
 
-# Set System Constants
+# Set app constants and config params
 script_root_dir = thisdir(thispath(__file__))
 thread_limit = os.cpu_count()
 
-# Instantiate loggers and log that application has started
 
-def log_error(message):
-    print(message)
+# Instantiate loggers and log that application has started
+def to_event_log(message):
+    '''
+    Temporary event logger until implementation of logging logger
+    :param message: (string) Event log message
+    '''
+    event_log = open(f"{cur_wrk_dir}\\events.log", "a")
+    event_log.write(f"{datetime.now()}: {message}")
+    event_log.close()
+
+def to_error_log(message):
+    '''
+    Temporary event logger until implementation of logging logger
+    :param message: (string) Event log message
+    '''
+    error_log = open(f"{cur_wrk_dir}\\errors.log", "a")
+    error_log.write(f"{datetime.now()}: {message}")
+    error_log.close()
+
 
 # Functions
-
 def set_tags(**_tags):
     '''
     Builds and returns a tuple of Tag objects.  Case statement needed to control DT object assignments to Tag object.
@@ -30,7 +45,7 @@ def set_tags(**_tags):
     '''
     _read_tags = []
     for registry, data_type in _tags.items():
-        match data_type:
+        match str(data_type).upper():
             case "BIT":
                 _read_tags.append(Tag(device=str(key), type=DT.BIT)) # Bit = 1 Bit (obviously...)
             case "SWORD":
@@ -55,6 +70,15 @@ def set_tags(**_tags):
 
 
 def read_host(_host, _port, _plc_type, _poll_rate, **_tags):
+    '''
+    Being developed from read_hosts. Intended for multi-threading. One thread per PLC connection.
+    :param _host: (string) IP Address or Hostname of PLC ethernet module
+    :param _port: (int) Port number for MELSEC socket on PLC
+    :param _plc_type: (string)
+    :param _poll_rate: (int) Polling rate in milliseconds
+    :param _tags: (dict) key:value pairs of Registry:DataType (i.e., {"D10":"SWORD", "X01:BIT"})
+    :return:
+    '''
     _read_tags = []
     for key, value in _tags.items():
         _read_tags.append(Tag(device=str(key), type=DT.str(value)))
@@ -83,20 +107,6 @@ def read_host(_host, _port, _plc_type, _poll_rate, **_tags):
 
 
 def read_hosts():
-    """
-    Establish communication with PLCs and write values to datastore
-
-    Args:
-        - _host(string)[Required]: The IP address/hostname of the PLC
-        - _port(int)[Required]: The MELSEC port number used on the host
-            - options: 5000 - 5009
-        - _plc_type(string)[Required]: The plc type of the host
-            - options: 'Q', 'L', 'QnA', 'iQ-L', 'iQ-R'
-        - _poll_rate(int)[Required]: The polling rate, in milliseconds.
-        - _tags(dict)[Required]: A dictionary of tag information
-            - format: registry:"registry_type"
-            - example: D10:"SWORD" --> Identifies the D10 registry as a signed word
-    """
 
     print(f'Current working directory: {cur_wrk_dir}')
     while True:
@@ -110,9 +120,8 @@ def read_hosts():
             Tag(device="SD215", type=DT.SWORD)
         ]
 
-        # _hosts = ["192.168.106.40", "192.168.106.43"]
+        _hosts = ["192.168.106.40", "192.168.106.43"]
         _port = 5002
-        # _port = 5000 # Used to test TimeoutError exception
         _plc_type = "iQ-R"
 
         for _host in _hosts:
