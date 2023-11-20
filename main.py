@@ -3,8 +3,8 @@ import os
 import logging
 from time import sleep
 import csv
-import threading
-from os.path import dirname, realpath
+from threading import Thread
+from os.path import dirname as thisdir, realpath as thispath
 from datetime import datetime
 from pymelsec import Type4E
 from pymelsec.constants import DT
@@ -14,30 +14,44 @@ from pymelsec.tag import Tag
 # Set app constants and config params
 script_root_dir = thisdir(thispath(__file__))
 thread_limit = os.cpu_count()
-
+debug = True
 
 # Instantiate loggers and log that application has started
 def to_event_log(message):
     '''
-    Temporary event logger until implementation of logging logger
+    Temporary event logger until implementation of logging logger.
+    For general script information event logging.
     :param message: (string) Event log message
     '''
-    event_log = open(f"{cur_wrk_dir}\\events.log", "a")
+    event_log = open(f"{script_root_dir}\\events.log", "a")
     event_log.write(f"{datetime.now()}: {message}")
     event_log.close()
 
 def to_error_log(message):
     '''
     Temporary event logger until implementation of logging logger
+    For general exception logging.  Do not use for detailed debugging logs.
+    For debugging, use to_debug_log().
     :param message: (string) Event log message
     '''
-    error_log = open(f"{cur_wrk_dir}\\errors.log", "a")
+    error_log = open(f"{script_root_dir}\\errors.log", "a")
     error_log.write(f"{datetime.now()}: {message}")
     error_log.close()
 
+def to_debug_log(message):
+    '''
+    Temporary event logger until implementation of logging logger.
+    For detailed error/debug information
+    :param message: (string) Event log message
+    '''
+    error_log = open(f"{script_root_dir}\\debug.log", "a")
+    error_log.write(f"{datetime.now()}: {message}")
+    error_log.close()
+
+to_error_log(f"{datetime.now()}: Main() started")
 
 # Functions
-def set_tags(**_tags):
+def set_tag(_tags):
     '''
     Builds and returns a tuple of Tag objects.  Case statement needed to control DT object assignments to Tag object.
     :param _tags: A dictionary containing the registry as a key and data type as a value. (i.e., {"D10": "SWORD"})
@@ -45,7 +59,8 @@ def set_tags(**_tags):
     '''
     _read_tags = []
     for registry, data_type in _tags.items():
-        match str(data_type).upper():
+        print(f'data_type: {str(data_type).upper()}')
+        match data_type.upper():
             case "BIT":
                 _read_tags.append(Tag(device=str(key), type=DT.BIT)) # Bit = 1 Bit (obviously...)
             case "SWORD":
@@ -79,9 +94,8 @@ def read_host(_host, _port, _plc_type, _poll_rate, **_tags):
     :param _tags: (dict) key:value pairs of Registry:DataType (i.e., {"D10":"SWORD", "X01:BIT"})
     :return:
     '''
-    _read_tags = []
-    for key, value in _tags.items():
-        _read_tags.append(Tag(device=str(key), type=DT.str(value)))
+    _read_tags = set_tag(_tags=_tags)
+
 
     dt_now = datetime.now()
     try:
@@ -100,15 +114,33 @@ def read_host(_host, _port, _plc_type, _poll_rate, **_tags):
                 with open(f'{cur_wrk_dir}\\results.csv', 'a', newline='') as csvfile:
                     csvwriter = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
                     csvwriter.writerow([_host, tag.device, tag.value, tag.type, tag.error, str(dt_now)])
+                # Add to_remote_sql() function
     except TimeoutError as te:
         print(f'Communication timeout for PLC host {_host} @ {dt_now}')
 
-    sleep(5)
+    sleep(_poll_rate)
 
+def to_local_SQL(payload):
+    '''
+    Send tag data to local SQL server
+    :param payload:
+    :return:
+    '''
+    print(payload)
+
+def to_remote_SQL(payload):
+    '''
+    Send tag data to remote SQL server
+    :param payload:
+    :return:
+    '''
+    print(payload)
+    # Add SQL connector string
+    # Add exception to write to memory cache, if no connection
 
 def read_hosts():
 
-    print(f'Current working directory: {cur_wrk_dir}')
+    print(f'Script directory: {script_root_dir}')
     while True:
         _read_tags = [
             Tag(device="D10", type=DT.SWORD),
@@ -143,18 +175,49 @@ def read_hosts():
                             csvwriter = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
                             csvwriter.writerow([_host, tag.device, tag.value, tag.type, tag.error, str(dt_now)])
             except TimeoutError as te:
-                print(f'Communication timeout for PLC host {_host} @ {dt_now}')
-
+                to_error_log(f'{dt_now}: Communication timeout for PLC host {_host}')
+                if debug:
+                    to_debug_log(
+                        f'{dt_now}: Communication timeout for PLC {_host}',
+                        f'\n\t'
+                    )
 
         sleep(5)
 
 
 # Main function start
 if __name__ == '__main__':
-    #read_tags()
-    tags= {
-        "D10":"SWORD"
-    }
-    set_tag(_tags=tags)
+    #read_hosts()
+
+    # static connection settings.  Migrate to config file read in at script init.
+    threads = []
+    tags = set_tag(
+        {
+            "D10": "SWORD",
+            "SD210": "SWORD",
+            "SD211": "SWORD",
+            "SD212": "SWORD",
+            "SD213": "SWORD",
+            "SD214": "SWORD",
+            "SD215": "SWORD"
+        }
+    )
+    plc_host_ips = (
+        '192.168.106.40',
+        '192.168.106.43'
+    )
+
+    for host_ip in plc_host_ips:
+        _kwargs = {
+            '_host': host_ip,
+            '_port': 5002,
+            '_plc_type': 'iQ-R',
+            '_poll_rate': 5,
+            '_tags': tags
+        }
+        threads.append(Thread(target=read_host, kwargs=_kwargs))
+
+    for thread in threads: thread.start()
+    for thread in threads: thread.join()
 
 # Main function end
