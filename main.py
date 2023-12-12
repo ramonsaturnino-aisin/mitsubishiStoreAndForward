@@ -177,8 +177,10 @@ def to_local_sql(plc_host, tag_name, register, num_val=None, str_val=None):
         conn.commit()
         print(f"{datetime.now()}: Added host '{plc_host}' data to local database")
     except mariadb.Error as e:
-        print(f'{datetime.now()}: {e}')
-        to_error_log(f'{datetime.now()}: {e}')
+        print(f'{datetime.now()}: {e}')  # Write to service log
+        to_error_log(f'{datetime.now()}: {e}')  # Write to application log file
+    finally:
+        conn.close() # Always close your DB connection
 
 
 def to_remote_SQL(payload):
