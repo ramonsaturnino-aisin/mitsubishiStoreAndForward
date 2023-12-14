@@ -7,6 +7,7 @@ from time import sleep
 from threading import Thread
 from os.path import dirname as thisdir, realpath as thispath
 from datetime import datetime
+import pypyodbc as odbc
 from pymelsec import Type4E
 from pymelsec.constants import DT
 from pymelsec.tag import Tag
@@ -183,15 +184,40 @@ def to_local_sql(plc_host, tag_name, register, num_val=None, str_val=None):
         conn.close() # Always close your DB connection
 
 
-def to_remote_SQL(payload):
-    '''
-    Send tag data to remote SQL server
-    :param payload:
-    :return:
-    '''
-    print(payload)
-    # Add SQL connector string
-    # Add exception to write to memory cache, if no connection
+def to_remote_SQL(plc_host, tag_name, register, num_val=None, str_val=None):
+    """
+        Sends tag information to REMOTE database.
+            Note: This function should be used to store data as a Main DB.
+        :param plc_host: (string)
+        :param tag_name: (string)
+        :param register: (string)
+        :param num_val: (float)
+        :param str_val: (string)
+        :return: Function does not return a value.
+        """
+    connection_string = f"""
+        DRIVER={{{'SQL SERVER'}}};
+        SERVER={'S-MES-DB-DEV'};
+        DATABASE={'LocalTagStore'};
+        Trust_Connection=yes;
+        uid=svc_storeandforward;
+        pwd=weG3RxkrNIVTjHc1vsOD;
+        """
+    try:
+        conn = odbc.connect(connection_string)
+        cursor = conn.cursor()
+        params = [plc_host, tag_name, register, num_val, str_val]  # coming from other function
+        cursor = conn.cursor()
+        (cursor.execute("{CALL p_StoreTagValue(?, ?, ?, ?, ?)}", params))
+        # Commit the changes
+        conn.commit()
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        to_error_log(f'{datetime.now()}: {e}')  # Write to application log file
+    finally:
+        # Close the cursor and connection when done
+        cursor.close()
+        conn.close()
 
 
 def read_hosts():
