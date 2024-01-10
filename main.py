@@ -1,8 +1,16 @@
 import mariadb
 import socket
 import os
+from matplotlib import pylab
+from pylab import *
 import logging
-import csv  # only used for testing. Remove once read_hosts() is deleted for production.
+import memory_profiler
+from memory_profiler import profile
+import csv
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.message import EmailMessage
 from time import sleep
 from threading import Thread
 from os.path import dirname as thisdir, realpath as thispath
@@ -12,8 +20,6 @@ from pymelsec import Type4E
 from pymelsec.constants import DT
 from pymelsec.tag import Tag
 
-
-
 # Set app constants and config params
 script_root_dir = thisdir(thispath(__file__))
 thread_limit = os.cpu_count()
@@ -21,6 +27,8 @@ debug = True
 this_host = socket.gethostbyname(socket.gethostname())
 
 
+fp=open("report_to_event_log.log", "w+")
+@profile(stream=fp)
 # Instantiate loggers and log that application has started
 def to_event_log(message):
     '''
@@ -33,6 +41,8 @@ def to_event_log(message):
     event_log.close()
 
 
+
+@profile(stream=fp)
 def to_error_log(message):
     '''
     Temporary event logger until implementation of logging logger
@@ -44,7 +54,7 @@ def to_error_log(message):
     error_log.write(f"{datetime.now()}: {message}")
     error_log.close()
 
-
+@profile(stream=fp)
 def to_debug_log(message):
     '''
     Temporary event logger until implementation of logging logger.
@@ -55,7 +65,7 @@ def to_debug_log(message):
     error_log.write(f"{datetime.now()}: {message}")
     error_log.close()
 
-
+@profile(stream=fp)
 def is_numeric(value):
     """
     Accepts any value and determines if it is a string or numeric.
@@ -70,7 +80,7 @@ def is_numeric(value):
         else:
             return False
 
-
+@profile(stream=fp)
 # Functions
 def set_tag(_tags):
     """
@@ -83,28 +93,81 @@ def set_tag(_tags):
         print(f'data_type: {str(_tags[registry].upper())}')
         match str(_tags[registry].upper()):
             case "BIT":
-                _read_tags.append(Tag(device=str(registry), type=DT.BIT)) # Bit = 1 Bit (obviously...)
+                _read_tags.append(Tag(device=str(registry), type=DT.BIT))  # Bit = 1 Bit (obviously...)
             case "SWORD":
-                _read_tags.append(Tag(device=str(registry), type=DT.SWORD)) # Signed Word = 16-bits
+                _read_tags.append(Tag(device=str(registry), type=DT.SWORD))  # Signed Word = 16-bits
             case "UWORD":
-                _read_tags.append(Tag(device=str(registry), type=DT.UWORD)) # Unsigned Word = 16-bits
+                _read_tags.append(Tag(device=str(registry), type=DT.UWORD))  # Unsigned Word = 16-bits
             case "SDWORD":
-                _read_tags.append(Tag(device=str(registry), type=DT.SDWORD)) # Signed Double Word = 32-bits
+                _read_tags.append(Tag(device=str(registry), type=DT.SDWORD))  # Signed Double Word = 32-bits
             case "UDWORD":
-                _read_tags.append(Tag(device=str(registry), type=DT.UDWORD)) # Unsigned Double Word = 32-bits
+                _read_tags.append(Tag(device=str(registry), type=DT.UDWORD))  # Unsigned Double Word = 32-bits
             case "FLOAT":
-                _read_tags.append(Tag(device=str(registry), type=DT.FLOAT)) # Floating Point 32-bits
+                _read_tags.append(Tag(device=str(registry), type=DT.FLOAT))  # Floating Point 32-bits
             case "DOUBLE":
-                _read_tags.append(Tag(device=str(registry), type=DT.DOUBLE)) # Double Integer 32-bits
+                _read_tags.append(Tag(device=str(registry), type=DT.DOUBLE))  # Double Integer 32-bits
             case "SLWORD":
-                _read_tags.append(Tag(device=str(registry), type=DT.SLWORD)) # unknown
+                _read_tags.append(Tag(device=str(registry), type=DT.SLWORD))  # unknown
             case "ULWORD":
-                _read_tags.append(Tag(device=str(registry), type=DT.ULWORD)) # unknown
+                _read_tags.append(Tag(device=str(registry), type=DT.ULWORD))  # unknown
             case _:
                 to_error_log(f"Unrecognized data type for registry {registry}")
     return tuple(_read_tags)
 
+@profile(stream=fp)
+def send_email():
+    msg = EmailMessage()
+    msg['Subject'] = 'This is a test'
+    msg.set_content('This is a test (in case both databases were not able to reach a connection) :)')
+    msg['From'] = 'storeandforward@aisinnc.com'
+    msg['To'] = ['ramonsaturnino@aisinnc.com']
 
+    # Send the message via our own SMTP server.
+    s = smtplib.SMTP('192.168.37.5')
+    print("email sent successfully")
+    s.send_message(msg)
+    sleep(30)
+    s.quit()
+
+@profile(stream=fp)
+def connection_verification():
+    try:
+        conn = odbc.connect(f"""
+                DRIVER={{{'SQL SERVER'}}};
+                SERVER={'S-MES-DB-DEV'};
+                DATABASE={'LocalTagStore'};
+                Trust_Connection=yes;
+                uid=svc_storeandforward;
+                pwd=weG3RxkrNIVTjHc1vsOD;
+                """)
+        conn.close()
+        print(f"\n{conn}")
+        return True
+    except Exception as e:
+        print(f"\nAn error occurred with remote db: {e}")
+        return False
+
+
+@profile(stream=fp)
+def local_conn_verification():
+    try:
+        conn = mariadb.connect(
+            user='svc_storeandforward',
+            password='weG3RxkrNIVTjHc1vsOD',
+            host='192.168.106.44',
+            port=3306,
+            database='LocalTagStore'
+        )
+        conn.cursor()
+        conn.close()
+        print(f"\n{conn}")
+        return True
+    except mariadb.Error as e:
+        print(f"\nAn error occurred with local db: {e}\n")
+        return False
+
+
+@profile(stream=fp)
 def read_host(_plc_host, _plc_port, _plc_type, _poll_rate, _tags):
     '''
     Being developed from read_hosts. Intended for multi-threading. One thread per PLC connection.
@@ -129,27 +192,59 @@ def read_host(_plc_host, _plc_port, _plc_type, _poll_rate, _tags):
         if read_result != None:
             for tag in read_result:
                 if is_numeric(tag.value):
-                    # Send number value to DB
-                    to_local_sql(
-                        plc_host=_plc_host,
-                        tag_name="TestTag",
-                        register=str(tag.device),
-                        num_val=float(tag.value)
-                    )
-                else:
-                    # Send string value to DB
-                    to_local_sql(
-                        plc_host=_plc_host,
-                        tag_name="TestTag",
-                        register=str(tag.device),
-                        str_val=str(tag.value)
-                    )
+                    if connection_verification():
+                        to_remote_sql(
+                            plc_host=_plc_host,
+                            tag_name="TestTag",
+                            register=str(tag.device),
+                            num_val=float(tag.value)
+                        )
+                    elif local_conn_verification():
+                        to_local_sql(
+                            plc_host=_plc_host,
+                            tag_name="TestTag",
+                            register=str(tag.device),
+                            num_val=float(tag.value)
+                        )
+                    else:
+                        send_email()
+                        to_csv(
+                            plc_host=_plc_host,
+                            tag_name="TestTag",
+                            register=str(tag.device),
+                            num_val=float(tag.value)
+                        )
+                else:  # is_string(tag.value)
+                    if connection_verification():
+                        to_remote_sql(
+                            plc_host=_plc_host,
+                            tag_name="TestTag",
+                            register=str(tag.device),
+                            str_val=str(tag.value)
+                        )
+                    elif local_conn_verification():
+                        to_local_sql(
+                            plc_host=_plc_host,
+                            tag_name="TestTag",
+                            register=str(tag.device),
+                            str_val=str(tag.value)
+                        )
+                    else:
+                        send_email()
+                        to_csv(
+                            plc_host=_plc_host,
+                            tag_name="TestTag",
+                            register=str(tag.device),
+                            str_val=str(tag.value)
+                        )
         else:
             print(f"read_result for host {_plc_host} is empty")
+            print("~~~~~~~~~~~~~~~~~~~~~")
 
         sleep(_poll_rate)
 
 
+@profile(stream=fp)
 def to_local_sql(plc_host, tag_name, register, num_val=None, str_val=None):
     """
     Sends tag information to local database.
@@ -181,10 +276,11 @@ def to_local_sql(plc_host, tag_name, register, num_val=None, str_val=None):
         print(f'{datetime.now()}: {e}')  # Write to service log
         to_error_log(f'{datetime.now()}: {e}')  # Write to application log file
     finally:
-        conn.close() # Always close your DB connection
+        conn.close()  # Always close your DB connection
 
 
-def to_remote_SQL(plc_host, tag_name, register, num_val=None, str_val=None):
+@profile(stream=fp)
+def to_remote_sql(plc_host, tag_name, register, num_val=None, str_val=None):
     """
         Sends tag information to REMOTE database.
             Note: This function should be used to store data as a Main DB.
@@ -195,22 +291,24 @@ def to_remote_SQL(plc_host, tag_name, register, num_val=None, str_val=None):
         :param str_val: (string)
         :return: Function does not return a value.
         """
-    connection_string = f"""
-        DRIVER={{{'SQL SERVER'}}};
-        SERVER={'S-MES-DB-DEV'};
-        DATABASE={'LocalTagStore'};
-        Trust_Connection=yes;
-        uid=svc_storeandforward;
-        pwd=weG3RxkrNIVTjHc1vsOD;
-        """
     try:
-        conn = odbc.connect(connection_string)
+        conn = odbc.connect(
+            f"""
+                DRIVER={{{'SQL SERVER'}}};
+                SERVER={'S-MES-DB-DEV'};
+                DATABASE={'LocalTagStore'};
+                Trust_Connection=yes;
+                uid=svc_storeandforward;
+                pwd=weG3RxkrNIVTjHc1vsOD;
+                """
+        )
         cursor = conn.cursor()
         params = [plc_host, tag_name, register, num_val, str_val]  # coming from other function
         cursor = conn.cursor()
         (cursor.execute("{CALL p_StoreTagValue(?, ?, ?, ?, ?)}", params))
         # Commit the changes
         conn.commit()
+        print(f"{datetime.now()}: Added host '{plc_host}' data to remote database")
     except Exception as e:
         print(f"An error occurred: {e}")
         to_error_log(f'{datetime.now()}: {e}')  # Write to application log file
@@ -220,51 +318,12 @@ def to_remote_SQL(plc_host, tag_name, register, num_val=None, str_val=None):
         conn.close()
 
 
-def read_hosts():
-
-    print(f'Script directory: {script_root_dir}')
-    while True:
-        _read_tags = [
-            Tag(device="D10", type=DT.SWORD),
-            Tag(device="SD210", type=DT.SWORD),
-            Tag(device="SD211", type=DT.SWORD),
-            Tag(device="SD212", type=DT.SWORD),
-            Tag(device="SD213", type=DT.SWORD),
-            Tag(device="SD214", type=DT.SWORD),
-            Tag(device="SD215", type=DT.SWORD)
-        ]
-
-        _hosts = ["192.168.106.40", "192.168.106.43"]
-        _port = 5002
-        _plc_type = "iQ-R"
-
-        for _host in _hosts:
-            dt_now = datetime.now()
-            try:
-                with Type4E(host=_host, port=_port, plc_type=_plc_type) as plc:
-                    plc.set_access_opt(comm_type="binary")
-                    read_result = plc.read(devices=_read_tags)
-                    print(f'host:{_host}')
-                    for tag in read_result:
-                        print(
-                            f'\tdevice:{tag.device}',
-                            f'value:{tag.value}',
-                            f'type:{tag.type}',
-                            f'error:{tag.error}',
-                            f'datetime:{dt_now}'
-                        )
-                        with open(f'{script_root}\\results.csv', 'a', newline='') as csvfile:
-                            csvwriter = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-                            csvwriter.writerow([_host, tag.device, tag.value, tag.type, tag.error, str(dt_now)])
-            except TimeoutError as te:
-                to_error_log(f'{dt_now}: Communication timeout for PLC host {_host}')
-                if debug:
-                    to_debug_log(
-                        f'{dt_now}: Communication timeout for PLC {_host}',
-                        f'\n\t'
-                    )
-
-        sleep(5)
+@profile(stream=fp)
+def to_csv(plc_host, tag_name, register, num_val=None, str_val=None):
+    with open(f'{script_root_dir}\\results.csv', 'a', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        csvwriter.writerow([plc_host, tag_name, register, num_val, str_val])
+    print("Sent to csv file")
 
 
 # Main function start
