@@ -325,7 +325,7 @@ def to_csv(plc_host, tag_name, register, num_val=None, str_val=None):
         csvwriter.writerow([plc_host, tag_name, register, num_val, str_val])
     print("Sent to csv file")
 
-
+    
 # Main function start
 if __name__ == '__main__':
     to_event_log(f"{datetime.now()}: Main() started")
