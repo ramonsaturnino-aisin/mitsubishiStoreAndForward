@@ -164,8 +164,8 @@ def to_local_sql(plc_host, tag_name, register, num_val=None, str_val=None):
     """
     try:
         conn = mariadb.connect(
-            user='svc_storeandforward',
-            password='weG3RxkrNIVTjHc1vsOD',
+            user='user',
+            password='password',
             host=this_host,
             port=3306,
             database='LocalTagStore'
@@ -197,11 +197,11 @@ def to_remote_SQL(plc_host, tag_name, register, num_val=None, str_val=None):
         """
     connection_string = f"""
         DRIVER={{{'SQL SERVER'}}};
-        SERVER={'S-MES-DB-DEV'};
+        SERVER={'server-name'};
         DATABASE={'LocalTagStore'};
         Trust_Connection=yes;
-        uid=svc_storeandforward;
-        pwd=weG3RxkrNIVTjHc1vsOD;
+        uid=user;
+        pwd=password;
         """
     try:
         conn = odbc.connect(connection_string)
